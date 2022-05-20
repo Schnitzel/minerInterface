@@ -45,9 +45,19 @@ class BaseMiner:
                     server_host_key_algs=["ssh-rsa"],
                 )
                 return conn
-            except Exception as e:
-                # logging.warning(f"{self} raised an exception: {e}")
-                raise e
+            except asyncssh.misc.PermissionDenied:
+                try:
+                    conn = await asyncssh.connect(
+                        str(self.ip),
+                        known_hosts=None,
+                        username="root",
+                        password="root",
+                        server_host_key_algs=["ssh-rsa"],
+                    )
+                    return conn
+                except Exception as e:
+                    # logging.warning(f"{self} raised an exception: {e}")
+                    raise e
         except OSError:
             logging.warning(f"Connection refused: {self}")
             return None
