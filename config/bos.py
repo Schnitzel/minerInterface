@@ -66,9 +66,10 @@ def bos_config_convert(config: dict):
                     out_config["pool_groups"][idx]["pools"][pool_idx][
                         "username"
                     ] = config[opt][idx]["pool"][pool_idx]["user"]
-                    out_config["pool_groups"][idx]["pools"][pool_idx][
-                        "password"
-                    ] = config[opt][idx]["pool"][pool_idx]["password"]
+                    if "password" in config[opt][idx]["pool"][pool_idx]:
+                        out_config["pool_groups"][idx]["pools"][pool_idx][
+                            "password"
+                        ] = config[opt][idx]["pool"][pool_idx]["password"]
         elif opt == "autotuning":
             out_config["autotuning"] = {}
             if "enabled" in config[opt].keys():
