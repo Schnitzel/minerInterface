@@ -1,28 +1,36 @@
-from API.bmminer import BMMinerAPI
-from API.bosminer import BOSMinerAPI
-from API.cgminer import CGMinerAPI
-from API.btminer import BTMinerAPI
-from API.unknown import UnknownAPI
-import ipaddress
 import asyncssh
 import logging
+import ipaddress
+
+from data import MinerData
 
 
 class BaseMiner:
-    def __init__(
-        self,
-        ip: str,
-        api: BMMinerAPI or BOSMinerAPI or CGMinerAPI or BTMinerAPI or UnknownAPI,
-    ) -> None:
-        self.ip = ipaddress.ip_address(ip)
-        self.uname = None
-        self.pwd = None
-        self.api = api
+    def __init__(self, *args) -> None:
+        self.ip = None
+        self.uname = "root"
+        self.pwd = "admin"
+        self.api = None
         self.api_type = None
         self.model = None
         self.light = None
         self.hostname = None
         self.nominal_chips = 1
+        self.version = None
+        self.fan_count = 2
+        self.config = None
+
+    def __repr__(self):
+        return f"{'' if not self.api_type else self.api_type} {'' if not self.model else self.model}: {str(self.ip)}"
+
+    def __lt__(self, other):
+        return ipaddress.ip_address(self.ip) < ipaddress.ip_address(other.ip)
+
+    def __gt__(self, other):
+        return ipaddress.ip_address(self.ip) > ipaddress.ip_address(other.ip)
+
+    def __eq__(self, other):
+        return ipaddress.ip_address(self.ip) == ipaddress.ip_address(other.ip)
 
     async def _get_ssh_connection(self) -> asyncssh.connect:
         """Create a new asyncssh connection"""
@@ -40,27 +48,17 @@ class BaseMiner:
                 conn = await asyncssh.connect(
                     str(self.ip),
                     known_hosts=None,
-                    username="admin",
+                    username="root",
                     password="admin",
                     server_host_key_algs=["ssh-rsa"],
                 )
                 return conn
-            except asyncssh.misc.PermissionDenied:
-                try:
-                    conn = await asyncssh.connect(
-                        str(self.ip),
-                        known_hosts=None,
-                        username="root",
-                        password="root",
-                        server_host_key_algs=["ssh-rsa"],
-                    )
-                    return conn
-                except Exception as e:
-                    # logging.warning(f"{self} raised an exception: {e}")
-                    raise e
-        except OSError:
+            except Exception as e:
+                # logging.warning(f"{self} raised an exception: {e}")
+                raise e
+        except OSError as e:
             logging.warning(f"Connection refused: {self}")
-            return None
+            raise e
         except Exception as e:
             # logging.warning(f"{self} raised an exception: {e}")
             raise e
@@ -99,19 +97,8 @@ class BaseMiner:
     async def send_config(self, *args, **kwargs):
         return None
 
-    async def get_data(self):
-        data = {
-            "IP": str(self.ip),
-            "Model": "Unknown",
-            "Hostname": "Unknown",
-            "Hashrate": 0,
-            "Temperature": 0,
-            "Pool User": "Unknown",
-            "Wattage": 0,
-            "Split": 0,
-            "Pool 1": "Unknown",
-            "Pool 1 User": "Unknown",
-            "Pool 2": "",
-            "Pool 2 User": "",
-        }
-        return data
+    async def get_mac(self):
+        return None
+
+    async def get_data(self) -> MinerData:
+        return MinerData(ip=str(self.ip))

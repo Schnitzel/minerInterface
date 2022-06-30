@@ -34,6 +34,8 @@ class MinerNetwork:
 
         if "-" in self.ip_addr:
             self.network = MinerNetworkRange(self.ip_addr)
+        elif isinstance(self.ip_addr, list):
+            self.network = MinerNetworkRange(self.ip_addr)
         else:
             # if there is no IP address passed, default to 192.168.1.0
             if not self.ip_addr:
@@ -66,7 +68,7 @@ class MinerNetwork:
 
         # create a list of tasks and miner IPs
         scan_tasks = []
-        miner_ips = []
+        miners = []
 
         # for each IP in the network
         for host in local_network.hosts():
@@ -74,32 +76,21 @@ class MinerNetwork:
             # make sure we don't exceed the allowed async tasks
             if len(scan_tasks) < SCAN_THREADS:
                 # add the task to the list
-                scan_tasks.append(self.ping_miner(host))
+                scan_tasks.append(self.ping_and_get_miner(host))
             else:
                 # run the scan tasks
-                miner_ips_scan = await asyncio.gather(*scan_tasks)
+                miners_scan = await asyncio.gather(*scan_tasks)
                 # add scanned miners to the list of found miners
-                miner_ips.extend(miner_ips_scan)
+                miners.extend(miners_scan)
                 # empty the task list
                 scan_tasks = []
         # do a final scan to empty out the list
-        miner_ips_scan = await asyncio.gather(*scan_tasks)
-        miner_ips.extend(miner_ips_scan)
+        miners_scan = await asyncio.gather(*scan_tasks)
+        miners.extend(miners_scan)
 
         # remove all None from the miner list
-        miner_ips = list(filter(None, miner_ips))
-        print(f"Found {len(miner_ips)} connected miners...")
-
-        # create a list of tasks to get miners
-        create_miners_tasks = []
-
-        # try to get each miner found
-        for miner_ip in miner_ips:
-            # append to the list of tasks
-            create_miners_tasks.append(MinerFactory().get_miner(miner_ip))
-
-        # get all miners in the list
-        miners = await asyncio.gather(*create_miners_tasks)
+        miners = list(filter(None, miners))
+        print(f"Found {len(miners)} connected miners...")
 
         # return the miner objects
         return miners
@@ -133,7 +124,7 @@ class MinerNetwork:
                     yield await miner
 
             # add the ping to the list of tasks if we dont scan
-            scan_tasks.append(loop.create_task(self.ping_miner(host)))
+            scan_tasks.append(loop.create_task(self.ping_and_get_miner(host)))
 
         # do one last scan at the end to close out the list
         scanned = asyncio.as_completed(scan_tasks)
@@ -143,6 +134,12 @@ class MinerNetwork:
     @staticmethod
     async def ping_miner(ip: ipaddress.ip_address) -> None or ipaddress.ip_address:
         return await ping_miner(ip)
+
+    @staticmethod
+    async def ping_and_get_miner(
+        ip: ipaddress.ip_address,
+    ) -> None or ipaddress.ip_address:
+        return await ping_and_get_miner(ip)
 
 
 async def ping_miner(
@@ -161,6 +158,35 @@ async def ping_miner(
             await writer.wait_closed()
             # ping was successful
             return ip
+        except asyncio.exceptions.TimeoutError:
+            # ping failed if we time out
+            continue
+        except ConnectionRefusedError:
+            # handle for other connection errors
+            logging.debug(f"{str(ip)}: Connection Refused.")
+        # ping failed, likely with an exception
+        except Exception as e:
+            logging.warning(f"{str(ip)}: {e}")
+        continue
+    return
+
+
+async def ping_and_get_miner(
+    ip: ipaddress.ip_address, port=4028
+) -> None or ipaddress.ip_address:
+    for i in range(PING_RETRIES):
+        connection_fut = asyncio.open_connection(str(ip), port)
+        try:
+            # get the read and write streams from the connection
+            reader, writer = await asyncio.wait_for(
+                connection_fut, timeout=PING_TIMEOUT
+            )
+            # immediately close connection, we know connection happened
+            writer.close()
+            # make sure the writer is closed
+            await writer.wait_closed()
+            # ping was successful
+            return await MinerFactory().get_miner(ip)
         except asyncio.exceptions.TimeoutError:
             # ping failed if we time out
             continue
